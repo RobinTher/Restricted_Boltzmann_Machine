@@ -10,15 +10,6 @@ from matplotlib import colors
 plt.rcParams["font.family"] = "serif"
 plt.rcParams["mathtext.fontset"] = "dejavuserif"
 
-n_beta = 400
-n_c = 400
-
-T_range = np.linspace(0.0025, 1, num = n_beta, endpoint = True)
-beta_s_range = 1/T_range[:, np.newaxis, np.newaxis, np.newaxis]
-c_range = np.linspace(0, 0.95, num = n_c, endpoint = True)
-
-P = 6
-
 def inv_eigval(beta_s_range, c_range, P):
     '''
     Compute the inverse maximum eigenvalue of the matrix S corresponding to teacher patterns
@@ -42,19 +33,6 @@ def inv_eigval(beta_s_range, c_range, P):
     with open("./Data/inv_eigval_range_P=%d.npy" % P, "wb") as file:
         np.save(file, inv_eigval_range)
 
-n_beta = 20
-n_c = 20
-
-T_range = np.linspace(0.0025, 1, num = n_beta, endpoint = True)
-beta_s_range = 1/T_range[:, np.newaxis, np.newaxis, np.newaxis]
-c_range = np.linspace(0, 0.95, num = n_c, endpoint = True)
-
-P = 6
-
-t = 1000000
-
-seed = 4
-
 def random_inv_eigval(beta_s_range, c_range, P, t, seed):
     '''
     Compute the inverse maximum eigenvalue of the matrix S corresponding to teacher patterns
@@ -64,6 +42,9 @@ def random_inv_eigval(beta_s_range, c_range, P, t, seed):
     The random correlations are defined in Appendix A.3 of the paper.
     Save the results in a .npy file.
     '''
+    n_beta = len(beta_s_range)
+    n_c = len(c_range)
+
     key = jax.random.PRNGKey(seed)
 
     inv_eigval_range = np.zeros((n_beta, n_c))
@@ -79,32 +60,13 @@ def random_inv_eigval(beta_s_range, c_range, P, t, seed):
     with open("./Data/random_inv_eigval_range_P=%d.npy" % P, "wb") as file:
         np.save(file, inv_eigval_range)
 
-# inv_eigval(beta_s_range, c_range, P)
-# random_inv_eigval(beta_s_range, c_range, P, t, seed)
-
-n_beta = 400
-n_c = 400
-
-T_equi_range = np.linspace(0.0025, 1, num = n_beta, endpoint = True)
-c_equi_range = np.linspace(0, 0.95, num = n_c, endpoint = True)
-
-n_beta = 20
-n_c = 20
-
-T_rand_range = np.linspace(0.0025, 1, num = n_beta, endpoint = True)
-c_rand_range = np.linspace(0, 0.95, num = n_c, endpoint = True)
-
-P_range = np.array([2, 4, 6])
-
-def plot_inv_eigval(T_range, c_range, P_range):
+def plot_inv_eigval(T_range_list, c_range_list, P_range):
     '''
     Plot the inverse maximum eigenvalue of the matrix S for a range of c and T.
     S is defined in Appendix F of the paper.
     Load inverse eigenvalues from .npy files written by the functions inv_eigval and random_inv_eigval.
     '''
     file_name_list = ["inv_eigval_range", "random_inv_eigval_range"]
-    c_range_list = [c_equi_range, c_rand_range]
-    T_range_list = [T_equi_range, T_rand_range]
     row_label_list = [r"Uniform correlations", r"Random correlations"]
 
     fig, axes = plt.subplots(2, 3, sharex = True, sharey = True, figsize = (15, 6))
@@ -141,15 +103,13 @@ def plot_inv_eigval(T_range, c_range, P_range):
     plt.ylabel(r"Temperature $T$", fontsize = fontsize)
     plt.show()
 
-def plot_critical_load(T_range, c_range, P_range):
+def plot_critical_load(T_range_list, c_range_list, P_range):
     '''
     Plot the critical load alpha_crit for a range of c and T.
     Load inverse eigenvalues from .npy files written by the functions inv_eigval and random_inv_eigval
     and use them to compute the critical load as described in the paper.
     '''
     file_name_list = ["inv_eigval_range", "random_inv_eigval_range"]
-    c_range_list = [c_equi_range, c_rand_range]
-    T_range_list = [T_equi_range, T_rand_range]
     row_label_list = [r"Uniform correlations", r"Random correlations"]
 
     fig, axes = plt.subplots(2, 3, sharex = True, sharey = True, figsize = (15, 6))

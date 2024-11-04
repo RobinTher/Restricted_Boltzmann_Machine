@@ -10,23 +10,7 @@ tol = np.finfo("float32").eps
 plt.rcParams["font.family"] = "serif"
 plt.rcParams["mathtext.fontset"] = "dejavuserif"
 
-'''
-beta_s = 1.2
-beta = 1.2
-
-m_0 = 0.2
-epsilon = 0
-
-t = 100
-t_step = 1/2
-t_simple = 50
-seed = 4
-
-n_alpha = 20
-alpha_range = np.linspace(0.1, 2, num = n_alpha, endpoint = True)
-'''
-
-def saddle_point_run(beta, alpha_range, P, m_0, epsilon, t, t_step, t_simple, seed):
+def saddle_point_run(beta, alpha_range, P, m_0, epsilon, t, t_step, tau_step, t_simple, seed):
     '''
     Solve the binary saddle-point equations over a range of alpha
     with beta_s = beta, P_t = P + 1 and c = 0.
@@ -61,22 +45,24 @@ def saddle_point_run(beta, alpha_range, P, m_0, epsilon, t, t_step, t_simple, se
     g_simp_init = m_0
 
     m_comp_range = np.zeros(n_alpha)
-    g_comp_range = np.zeros(n_alpha)
+    q_comp_range = np.zeros((n_alpha, 2))
     m_simp_range = np.zeros(n_alpha)
-    g_simp_range = np.zeros(n_alpha)
+    q_simp_range = np.zeros((n_alpha, 2))
     F_range = np.zeros(n_alpha)
-    
+
     for j, alpha in enumerate(alpha_range):
-        m, s, q, _, F = iterator.iterate(t, t_step, beta_s, beta, alpha, m_init, s_init, q_init)
-        
+        m, s, q, _, F = iterator.iterate(t, t_step, tau_step, beta_s, beta, alpha, m_init, s_init, q_init)
+
         m_comp_range[j] = np.mean(np.diagonal(m))
         if P_t > P:
-            g_comp_range[j] = np.mean(np.diagonal(q)[P : P_t])
-        
+            q_comp_range[j, 0] = np.mean(np.diagonal(q)[: P])
+            q_comp_range[j, 1] = q[P, P]
+
         m, g = simple_iterator.iterate(t_simple, beta, alpha, m_simp_init, g_simp_init)
         m_simp_range[j] = np.squeeze(m)
         if P_t > P:
-            g_simp_range[j] = np.squeeze(g)
+            q_simp_range[j, 0] = np.squeeze(m)
+            q_simp_range[j, 1] = np.squeeze(g)
         
         F_range[j] = F
     
@@ -85,8 +71,8 @@ def saddle_point_run(beta, alpha_range, P, m_0, epsilon, t, t_step, t_simple, se
         np.save(file, m_simp_range)
     
     with open("./Data/PSB_overlap_P=%d_beta=%.2f.npy" % (P, beta), "wb") as file:
-        np.save(file, g_comp_range)
-        np.save(file, g_simp_range)
+        np.save(file, q_comp_range)
+        np.save(file, q_simp_range)
 
     with open("./Data/PSB_free_entropy_P=%d_beta=%.2f.npy" % (P, beta), "wb") as file:
         np.save(file, F_range)
@@ -94,24 +80,26 @@ def saddle_point_run(beta, alpha_range, P, m_0, epsilon, t, t_step, t_simple, se
     m_init[0, P] = m_0
 
     m_comp_range = np.zeros((n_alpha, 2))
-    g_comp_range = np.zeros((n_alpha, 2))
+    q_comp_range = np.zeros((n_alpha, 3))
     m_simp_range = np.zeros(n_alpha)
-    g_simp_range = np.zeros(n_alpha)
+    q_simp_range = np.zeros((n_alpha, 2))
     F_range = np.zeros(n_alpha)
 
     for j, alpha in enumerate(alpha_range):
-        m, s, q, _, F = iterator.iterate(t, t_step, beta_s, beta, alpha, m_init, s_init, q_init)
+        m, s, q, _, F = iterator.iterate(t, t_step, tau_step, beta_s, beta, alpha, m_init, s_init, q_init)
 
         m_comp_range[j, 0] = np.mean(np.diagonal(m)[1 :])
         m_comp_range[j, 1] = (m[0, 0] + m[0, P])/2
         if P_t > P:
-            g_comp_range[j, 0] = (q[0, 0] + q[P_t, P_t])/2
-            g_comp_range[j, 1] = (q[0, P_t] + q[P_t, 0])/2
+            q_comp_range[j, 0] = np.mean(np.diagonal(q)[1 : P])
+            q_comp_range[j, 1] = (q[0, 0] + q[P, P])/2
+            q_comp_range[j, 2] = (q[0, P] + q[P, 0])/2
 
         m, g = simple_iterator.iterate(t_simple, beta, alpha, m_simp_init, g_simp_init)
         m_simp_range[j] = np.squeeze(m)
         if P_t > P:
-            g_simp_range[j] = np.squeeze(g)
+            q_simp_range[j, 0] = np.squeeze(m)
+            q_simp_range[j, 1] = np.squeeze(g)
 
         F_range[j] = F
 
@@ -120,18 +108,13 @@ def saddle_point_run(beta, alpha_range, P, m_0, epsilon, t, t_step, t_simple, se
         np.save(file, m_simp_range)
 
     with open("./Data/partial_PSB_overlap_P=%d_beta=%.2f.npy" % (P, beta), "wb") as file:
-        np.save(file, g_comp_range)
-        np.save(file, g_simp_range)
+        np.save(file, q_comp_range)
+        np.save(file, q_simp_range)
 
     with open("./Data/partial_PSB_free_entropy_P=%d_beta=%.2f.npy" % (P, beta), "wb") as file:
         np.save(file, F_range)
-    
-'''
-t = 1000
-t_step = 0.1
-'''
 
-def normal_saddle_point_run(beta, alpha_range, P, m_0, epsilon, t, t_step, t_simple, seed):
+def normal_saddle_point_run(beta, alpha_range, P, m_0, epsilon, t, t_step, tau_step, t_simple, seed):
     '''
     Solve the normal saddle-point equations over a range of alpha
     with beta_s = beta, P_t = P + 1 and c = 0.
@@ -139,8 +122,8 @@ def normal_saddle_point_run(beta, alpha_range, P, m_0, epsilon, t, t_step, t_sim
     Save the results in .npy files.
     Initialize the order parameters with m_0 and epsilon as shown in the paper.
     '''
-    n_normal_samples = 800000
-    n_binary_samples = 8000000
+    n_normal_samples = 8000000
+    n_binary_samples = 80000000
     n_simple_samples = 401
     n_alpha = len(alpha_range)
 
@@ -166,58 +149,62 @@ def normal_saddle_point_run(beta, alpha_range, P, m_0, epsilon, t, t_step, t_sim
     g_simp_init = m_0
 
     m_comp_range = np.zeros(n_alpha)
-    g_comp_range = np.zeros(n_alpha)
+    q_comp_range = np.zeros((n_alpha, 2))
     m_simp_range = np.zeros(n_alpha)
-    g_simp_range = np.zeros(n_alpha)
+    q_simp_range = np.zeros((n_alpha, 2))
 
     for j, alpha in enumerate(alpha_range):
-        m, s, q, _ = iterator.iterate(t, t_step, beta_s, beta, alpha, m_init, s_init, q_init)
+        m, s, q, _ = iterator.iterate(t, t_step, tau_step, beta_s, beta, alpha, m_init, s_init, q_init)
 
         m_comp_range[j] = np.mean(np.diagonal(m))
         if P_t > P:
-            g_comp_range[j] = np.mean(np.diagonal(q)[P : P_t])
+            q_comp_range[j, 0] = np.mean(np.diagonal(q)[: P])
+            q_comp_range[j, 1] = q[P, P]
 
         m, g = simple_iterator.iterate(t_simple, beta, alpha, m_simp_init, g_simp_init)
         m_simp_range[j] = np.squeeze(m)
         if P_t > P:
-            g_simp_range[j] = np.squeeze(g)
+            q_simp_range[j, 0] = np.squeeze(m)
+            q_simp_range[j, 1] = np.squeeze(g)
 
     with open("./Data/PSB_normal_magnetization_P=%d_beta=%.2f.npy" % (P, beta), "wb") as file:
         np.save(file, m_comp_range)
         np.save(file, m_simp_range)
 
     with open("./Data/PSB_normal_overlap_P=%d_beta=%.2f.npy" % (P, beta), "wb") as file:
-        np.save(file, g_comp_range)
-        np.save(file, g_simp_range)
+        np.save(file, q_comp_range)
+        np.save(file, q_simp_range)
     
     m_init[0, P] = m_0
 
     m_comp_range = np.zeros((n_alpha, 2))
-    g_comp_range = np.zeros((n_alpha, 2))
+    q_comp_range = np.zeros((n_alpha, 3))
     m_simp_range = np.zeros(n_alpha)
-    g_simp_range = np.zeros(n_alpha)
+    q_simp_range = np.zeros((n_alpha, 2))
 
     for j, alpha in enumerate(alpha_range):
-        m, s, q, _ = iterator.iterate(t, t_step, beta_s, beta, alpha, m_init, s_init, q_init)
+        m, s, q, _ = iterator.iterate(t, t_step, tau_step, beta_s, beta, alpha, m_init, s_init, q_init)
 
         m_comp_range[j, 0] = np.mean(np.diagonal(m)[1 :])
         m_comp_range[j, 1] = (m[0, 0] + m[0, P])/2
         if P_t > P:
-            g_comp_range[j, 0] = (q[0, 0] + q[P_t, P_t])/2 # np.mean(np.diagonal(q)[P : P_t])
-            g_comp_range[j, 1] = (q[0, P_t] + q[P_t, 0])/2
+            q_comp_range[j, 0] = np.mean(np.diagonal(q)[1 : P])
+            q_comp_range[j, 1] = (q[0, 0] + q[P, P])/2
+            q_comp_range[j, 2] = (q[0, P] + q[P, 0])/2
 
         m, g = simple_iterator.iterate(t_simple, beta, alpha, m_simp_init, g_simp_init)
         m_simp_range[j] = np.squeeze(m)
         if P_t > P:
-            g_simp_range[j] = np.squeeze(g)
+            q_simp_range[j, 0] = np.squeeze(m)
+            q_simp_range[j, 1] = np.squeeze(g)
 
     with open("./Data/partial_PSB_normal_magnetization_P=%d_beta=%.2f.npy" % (P, beta), "wb") as file:
         np.save(file, m_comp_range)
         np.save(file, m_simp_range)
 
     with open("./Data/partial_PSB_normal_overlap_P=%d_beta=%.2f.npy" % (P, beta), "wb") as file:
-        np.save(file, g_comp_range)
-        np.save(file, g_simp_range)
+        np.save(file, q_comp_range)
+        np.save(file, q_simp_range)
 
 def plot_overlap(beta, alpha_range, P_range, name):
     '''
@@ -225,72 +212,43 @@ def plot_overlap(beta, alpha_range, P_range, name):
     Compare the prediction of the full saddle-point equations
     to that of the reduced saddle-point equations in order to reproduce Figs. (1), (2), (15) and (16).
     '''
-    fig, (m_main_axes, m_res_axes) = plt.subplots(nrows = 2, ncols = len(P_range), sharex = True, sharey = "row", figsize = (15, 6))
-    m_fig_axis = fig.add_subplot(111, frameon = False)
-    plt.tick_params(labelcolor = "none", which = "both", top = False, bottom = False, left = False, right = False)
-    
-    fig, (g_main_axes, g_res_axes) = plt.subplots(nrows = 2, ncols = len(P_range), sharex = True, sharey = "row", figsize = (15, 6))
-    g_fig_axis = fig.add_subplot(111, frameon = False)
+    fig, (m_axes, q_axes) = plt.subplots(nrows = 2, ncols = len(P_range), sharex = True, sharey = "row", figsize = (15, 8))
+    fig_axis = fig.add_subplot(111, frameon = False)
     plt.tick_params(labelcolor = "none", which = "both", top = False, bottom = False, left = False, right = False)
     
     fontsize = 13
     
     set_ylabel = True
-    for P, m_main_axis, m_res_axis, g_main_axis, g_res_axis in zip(P_range, m_main_axes, m_res_axes, g_main_axes, g_res_axes):
+    for P, m_axis, q_axis in zip(P_range, m_axes, q_axes):
         with open("./Data/%s_magnetization_P=%d_beta=%.2f.npy" % (name, P, beta), "rb") as file:
             m_comp_range = np.load(file)
             m_simp_range = np.load(file)
         
         with open("./Data/%s_overlap_P=%d_beta=%.2f.npy" % (name, P, beta), "rb") as file:
-            g_comp_range = np.load(file)
-            g_simp_range = np.load(file)
+            q_comp_range = np.load(file)
+            q_simp_range = np.load(file)
         
-        m_main_axis.plot(alpha_range, m_simp_range, linestyle = "-", color = "C0")
-        m_main_axis.plot(alpha_range, m_comp_range, linestyle = "--", linewidth = 3, color = "C1")
-        m_main_axis.set_xlim(np.min(alpha_range), np.max(alpha_range))
-        m_main_axis.tick_params(axis = "both", which = "major", labelsize = fontsize)
-        m_main_axis.tick_params(axis = "both", which = "minor", labelsize = fontsize)
-        m_main_axis.legend([r"Simplified equations", r"Full equations with" + "\n" + r"$P = %d$ hidden units" % P], fontsize = fontsize)
+        m_simp_line = m_axis.plot(alpha_range, m_simp_range, linestyle = "-", color = "C0")[0]
+        m_comp_line = m_axis.plot(alpha_range, m_comp_range, linestyle = "--", linewidth = 3, color = "C1")[0]
+        m_axis.set_xlim(np.min(alpha_range), np.max(alpha_range))
+        m_axis.tick_params(axis = "both", which = "major", labelsize = fontsize)
+        m_axis.tick_params(axis = "both", which = "minor", labelsize = fontsize)
+        m_axis.legend([m_simp_line, m_comp_line], [r"Simplified equations", r"Full equations with" + "\n" + r"$P = %d$ hidden units" % (P + 1)], fontsize = fontsize)
         if set_ylabel:
-            m_main_axis.set_ylabel(r"Magnetization $m$", fontsize = fontsize)
+            m_axis.set_ylabel(r"Magnetization $m$", fontsize = fontsize)
         
-        if m_comp_range.ndim == m_simp_range.ndim + 1:
-            m_simp_range = m_simp_range[:, np.newaxis]
-        
-        m_res_axis.plot(alpha_range, np.zeros_like(alpha_range), linestyle = "-", color = "C0")
-        m_res_axis.plot(alpha_range, m_comp_range - m_simp_range, linestyle = "--", linewidth = 3, color = "C1")
-        m_res_axis.set_xlim(np.min(alpha_range), np.max(alpha_range))
-        m_res_axis.tick_params(axis = "both", which = "major", labelsize = fontsize)
-        m_res_axis.tick_params(axis = "both", which = "minor", labelsize = fontsize)
-        m_res_axis.yaxis.set_major_formatter(ticker.FormatStrFormatter('%.4f'))
+        q_simp_line = q_axis.plot(alpha_range, q_simp_range, linestyle = "-", color = "C0")[0]
+        q_comp_line = q_axis.plot(alpha_range, q_comp_range, linestyle = "--", linewidth = 3, color = "C3")[0]
+        q_axis.set_xlim(np.min(alpha_range), np.max(alpha_range))
+        q_axis.tick_params(axis = "both", which = "major", labelsize = fontsize)
+        q_axis.tick_params(axis = "both", which = "minor", labelsize = fontsize)
+        q_axis.legend([q_simp_line, q_comp_line], [r"Simplified equations", r"Full equations with" + "\n" + r"$P = %d$ hidden units" % (P + 1)], fontsize = fontsize)
         if set_ylabel:
-            m_res_axis.set_ylabel(r"Residuals", fontsize = fontsize)
-        
-        g_main_axis.plot(alpha_range, g_simp_range, linestyle = "-", color = "C0")
-        g_main_axis.plot(alpha_range, g_comp_range, linestyle = "--", linewidth = 3, color = "C3")
-        g_main_axis.set_xlim(np.min(alpha_range), np.max(alpha_range))
-        g_main_axis.tick_params(axis = "both", which = "major", labelsize = fontsize)
-        g_main_axis.tick_params(axis = "both", which = "minor", labelsize = fontsize)
-        g_main_axis.legend([r"Simplified equations", r"Full equations with" + "\n" + r"$P = %d$ hidden units" % P], fontsize = fontsize)
-        if set_ylabel:
-            g_main_axis.set_ylabel(r"Overlap $g$", fontsize = fontsize)
-        
-        if g_comp_range.ndim == g_simp_range.ndim + 1:
-            g_simp_range = g_simp_range[:, np.newaxis]
-        
-        g_res_axis.plot(alpha_range, np.zeros_like(alpha_range), linestyle = "-", color = "C0")
-        g_res_axis.plot(alpha_range, g_comp_range - g_simp_range, linestyle = "--", linewidth = 3, color = "C3")
-        g_res_axis.set_xlim(np.min(alpha_range), np.max(alpha_range))
-        g_res_axis.tick_params(axis = "both", which = "major", labelsize = fontsize)
-        g_res_axis.tick_params(axis = "both", which = "minor", labelsize = fontsize)
-        g_res_axis.yaxis.set_major_formatter(ticker.FormatStrFormatter('%.4f'))
-        if set_ylabel:
-            g_res_axis.set_ylabel(r"Residuals", fontsize = fontsize)
+            q_axis.set_ylabel(r"Spin-glass overlap $q$", fontsize = fontsize)
         
         set_ylabel = False
     
-    m_fig_axis.set_xlabel(r"Load $\alpha$", fontsize = fontsize)
-    g_fig_axis.set_xlabel(r"Load $\alpha$", fontsize = fontsize)
+    fig_axis.set_xlabel(r"Load $\alpha$", fontsize = fontsize)
     plt.show()
 
 def plot_free_entropy_difference(beta, alpha_range, P):
@@ -307,6 +265,6 @@ def plot_free_entropy_difference(beta, alpha_range, P):
     plt.plot(alpha_range, F_PBS_range - F_partial_PBS_range)
     
     plt.xlabel(r"Load $\alpha$", fontsize = fontsize)
-    plt.ylabel(r"Free entropy difference $f_{\mathrm{full \ PBS}} - f_{\mathrm{partial \ PBS}}$")
+    plt.ylabel(r"Free entropy difference $f_{\mathrm{PBS}} - f_{\mathrm{partial \ PBS}}$")
     
     plt.show()

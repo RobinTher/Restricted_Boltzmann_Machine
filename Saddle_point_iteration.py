@@ -12,7 +12,7 @@ from scipy.integrate import simpson
 
 # import time
 
-# machine_eps = np.finfo("float32").eps
+machine_eps = np.finfo("float32").eps
 
 def integral(y, x):
     '''
@@ -21,6 +21,10 @@ def integral(y, x):
     Used as a helper function.
     '''
     return simpson(y, x, axis = 0)
+
+def real_mean(w):
+    
+    return jnp.mean(jnp.real(w), axis = 1, keepdims = True)
 
 def random_mat_cor(mat_cor_cor, P, n_beta, n_c, key):
     '''
@@ -102,7 +106,12 @@ def random_multivariate_binary(mat_cor, P, n_binary_samples, key):
     spins_x (float array):
         Random samples generated.
     '''
-    spins_x = jnp.sign(jax.random.multivariate_normal(key, mean = np.zeros(P), cov = np.sin(np.pi/2 * mat_cor), shape = (n_binary_samples,)))
+    spins_x = random_white_normal(P, n_binary_samples, key)
+    C = np.sin(np.pi/2 * mat_cor)
+    L = jnp.linalg.cholesky(C)
+    spins_x = jnp.sign(L @ spins_x.T).T
+    
+    # spins_x = jnp.sign(jax.random.multivariate_normal(key, mean = np.zeros(P), cov = np.sin(np.pi/2 * mat_cor), shape = (n_binary_samples,)))
     
     return spins_x
 
@@ -155,7 +164,12 @@ def random_white_normal(n_normal_dims, n_normal_samples, key):
     '''
 
     z = jax.random.normal(key, shape = (n_normal_samples, n_normal_dims))
+    
+    # z = z - jnp.mean(z, axis = 0, keepdims = True)
+    
     z = (z - jnp.flip(z, axis = 0))/jnp.sqrt(2)
+    
+    # z = z.at[n_normal_samples//2 :].set(jnp.flip(z[n_normal_samples//2 :], axis = 0))
     
     C = jnp.array(jnp.cov(z, rowvar = False), ndmin = 2)
     
@@ -165,6 +179,7 @@ def random_white_normal(n_normal_dims, n_normal_samples, key):
     # z = ((z @ eigvecs) * 1/jnp.sqrt(eigvals)) @ eigvecs.T
     
     L = jnp.linalg.cholesky(C)
+    # z = jax.scipy.linalg.solve_triangular(L, z.T, lower = True).T
     z = jnp.linalg.solve(L, z.T).T
     
     return z
@@ -179,7 +194,7 @@ def probability(H):
     '''
     Evaluate the Gibbs distribution of input input energy levels.
     '''
-    C = jnp.real(jnp.max(H, axis = 0))
+    C = jnp.max(H, axis = 0) # jnp.real(jnp.max(H, axis = 0))
     M = jnp.exp(H - C)
     
     prob = M / jnp.sum(M, axis = 0)
@@ -190,7 +205,7 @@ def log_Z(H):
     '''
     Evaluate the log partition function of input energy levels.
     '''
-    C = jnp.real(jnp.max(H, axis = 0))
+    C = jnp.max(H, axis = 0) # jnp.real(jnp.max(H, axis = 0))
     
     f = C + jnp.log(jnp.sum(jnp.exp(H - C), axis = 0))
     
@@ -202,6 +217,13 @@ def max_abs(x, axis = None, keepdims = False):
     '''
     return jnp.maximum(jnp.max(x, axis = axis, keepdims = keepdims), -jnp.min(x, axis = axis, keepdims = keepdims))
 
+def do_nothing(message):
+    return
+
+def print_message(message):
+    jax.debug.print("{message}", message = message)
+    return
+    
 def keep_looping(t, tol, args):
     """
     Check if the loop should continue based on the given conditions.
@@ -214,7 +236,8 @@ def keep_looping(t, tol, args):
     args (tuple):
         Tuple containing the current and previous values of the order parameters,
         among which t_cur and m_cur and m_hat.
-        t_cur (int): Current iteration number.
+        t_cur (int):
+            Current iteration number.
         m_cur (jnp.ndarray):
             Current value of the Mattis magnetization m.
         m_prev (jnp.ndarray):
@@ -332,7 +355,11 @@ class Iterator():
         
         # z = self.z
         
-        A_q_times_z = jnp.sqrt(2*q - jnp.diag(jnp.sum(q, axis = 1) + 0j)) * z
+        A_q_squared = 2*q - jnp.diag(jnp.sum(q, axis = 1))
+        A_q = jnp.sqrt(jnp.abs(A_q_squared))
+        A_q = jnp.where(A_q_squared >= 0, (1 + 0j) * A_q, (0 + 1j) * A_q)
+        
+        A_q_times_z = A_q * z
         
         H_L = lambda_2 * (jnp.sum(self.spins_T @ A_q_times_z, axis = -1, keepdims = True) + jnp.sum(A_q_times_z @ self.spins, axis = -2, keepdims = True))/2
         
@@ -395,9 +422,9 @@ class Iterator():
         F = F + F_L_conjugate + alpha * F_L_ordinary - alpha * F_M
         
         return jnp.real(F)
-    
+        
     @partial(jax.jit, static_argnums = 0)
-    def update(self, t_step, beta_s, beta, alpha, p_M_s, args):
+    def update(self, t_step, tau_step, beta_s, beta, alpha, p_M_s, args):
         '''
         Single iteration of the saddle-point equations.
         Update the conjugate order parameters first, then update the ordinary order parameters.
@@ -429,44 +456,56 @@ class Iterator():
         key_update, key_ordinary, key_conjugate = jax.random.split(key_update, num = 3)
         
         H_L = self.hamiltonian_L(m_cur, s_cur, q_cur, beta_s, beta, key_ordinary)
-        p_L = jnp.real(probability(H_L))
+        p_L = probability(H_L) # jnp.real(probability(H_L))
+        
+        # message = p_L[:, :, : 3]
+        # jax.lax.cond(jnp.any(jnp.imag(message) != 0), print_message, do_nothing, message)
+        # jax.debug.print("{p_L}", p_L = p_L[:, :, : 3])
         
         # jax.debug.print("{p_L}", p_L = jnp.max(jnp.sum(jnp.abs(p_L), axis = 0)))
         
         H_M = hamiltonian_M(self.spins_T, self.spins, s_cur, beta)
         p_M = probability(H_M)
         
-        m_hat = (1 - t_step) * m_hat + t_step * beta_s*beta*alpha * jnp.squeeze(jnp.sum(p_M_s * jnp.mean(self.spins_s * jnp.sum(p_L * self.spins_T, axis = 0), axis = 1, keepdims = True), axis = 0))
-        s_hat = (1 - t_step) * s_hat + t_step * beta**2*alpha * jnp.squeeze(jnp.sum(p_M_s * jnp.mean(jnp.sum(p_L * self.spins_T * self.spins, axis = 0), axis = 1, keepdims = True), axis = 0) - jnp.sum(p_M * self.spins_T * self.spins, axis = 0))
-        q_hat = (1 - t_step) * q_hat + t_step * beta**2*alpha * jnp.squeeze(jnp.sum(p_M_s * jnp.mean(jnp.sum(p_L * self.spins_T, axis = 0) * jnp.sum(p_L * self.spins, axis = 0), axis = 1, keepdims = True), axis = 0))
+        # m_grad = beta_s*beta*alpha * jnp.real(jnp.squeeze(jnp.sum(p_M_s * jnp.mean(self.spins_s * jnp.sum(p_L * self.spins_T, axis = 0), axis = 1, keepdims = True), axis = 0)))
+        # s_grad = beta**2*alpha * jnp.real(jnp.squeeze(jnp.sum(p_M_s * jnp.mean(jnp.sum(p_L * self.spins_T * self.spins, axis = 0), axis = 1, keepdims = True), axis = 0) - jnp.sum(p_M * self.spins_T * self.spins, axis = 0)))
+        # q_grad = beta**2*alpha * jnp.real(jnp.squeeze(jnp.sum(p_M_s * jnp.mean(jnp.sum(p_L * self.spins_T, axis = 0) * jnp.sum(p_L * self.spins, axis = 0), axis = 1, keepdims = True), axis = 0)))
+        
+        m_grad = beta_s*beta*alpha * jnp.squeeze(jnp.sum(p_M_s * real_mean(self.spins_s * jnp.sum(p_L * self.spins_T, axis = 0)), axis = 0))
+        s_grad = beta**2*alpha * jnp.squeeze(jnp.sum(p_M_s * real_mean(jnp.sum(p_L * self.spins_T * self.spins, axis = 0)), axis = 0) - jnp.sum(p_M * self.spins_T * self.spins, axis = 0))
+        q_grad = beta**2*alpha * jnp.squeeze(jnp.sum(p_M_s * real_mean(jnp.sum(p_L * self.spins_T, axis = 0) * jnp.sum(p_L * self.spins, axis = 0)), axis = 0))
+        
+        # q_grad = jnp.where((-beta**2*alpha <= q_grad) & (q_grad <= beta**2*alpha), q_grad, beta**2*alpha * jnp.sign(q_grad))
+        
+        m_hat = (1 - t_step) * m_hat + t_step * m_grad
+        s_hat = (1 - t_step) * s_hat + t_step * s_grad
+        q_hat = (1 - t_step) * q_hat + t_step * q_grad
+        
         
         H_L = self.hamiltonian_L(m_hat, s_hat, q_hat, 1, 1, key_conjugate)
-        p_L = jnp.real(probability(H_L))
+        p_L = probability(H_L) # jnp.real(probability(H_L))
         
-        # jax.debug.print("{p_L}", p_L = jnp.max(jnp.sum(jnp.abs(p_L), axis = 0)))
+        # m_grad = jnp.real(jnp.squeeze(jnp.sum(self.p_x * jnp.mean(self.spins_s * jnp.sum(p_L * self.spins_T, axis = 0), axis = 1, keepdims = True), axis = 0)))
+        # s_grad = jnp.real(jnp.squeeze(jnp.sum(self.p_x * jnp.mean(jnp.sum(p_L * self.spins_T * self.spins, axis = 0), axis = 1, keepdims = True), axis = 0)))
+        # q_grad = jnp.real(jnp.squeeze(jnp.sum(self.p_x * jnp.mean(jnp.sum(p_L * self.spins_T, axis = 0) * jnp.sum(p_L * self.spins, axis = 0), axis = 1, keepdims = True), axis = 0)))
         
-        m_cur = 1/(1 + t_step) * m_cur + t_step/(1 + t_step) * jnp.squeeze(jnp.sum(self.p_x * jnp.mean(self.spins_s * jnp.sum(p_L * self.spins_T, axis = 0), axis = 1, keepdims = True), axis = 0))
-        s_cur = 1/(1 + t_step) * s_cur + t_step/(1 + t_step) * jnp.squeeze(jnp.sum(self.p_x * jnp.mean(jnp.sum(p_L * self.spins_T * self.spins, axis = 0), axis = 1, keepdims = True), axis = 0))
-        q_cur = 1/(1 + t_step) * q_cur + t_step/(1 + t_step) * jnp.squeeze(jnp.sum(self.p_x * jnp.mean(jnp.sum(p_L * self.spins_T, axis = 0) * jnp.sum(p_L * self.spins, axis = 0), axis = 1, keepdims = True), axis = 0))
+        m_grad = jnp.squeeze(jnp.sum(self.p_x * real_mean(self.spins_s * jnp.sum(p_L * self.spins_T, axis = 0)), axis = 0))
+        s_grad = jnp.squeeze(jnp.sum(self.p_x * real_mean(jnp.sum(p_L * self.spins_T * self.spins, axis = 0)), axis = 0))
+        q_grad = jnp.squeeze(jnp.sum(self.p_x * real_mean(jnp.sum(p_L * self.spins_T, axis = 0) * jnp.sum(p_L * self.spins, axis = 0)), axis = 0))
         
-        # m_cur = jax.lax.select(-1 <= m_cur <= 1, m_cur, jnp.sign(m_cur))
-        # s_cur = jax.lax.select(-1 <= s_cur <= 1, s_cur, jnp.sign(s_cur))
-        # q_cur = jax.lax.select(-1 <= q_cur <= 1, q_cur, jnp.sign(q_cur))
+        # q_grad = jnp.where((-1 <= q_grad) & (q_grad <= 1), q_grad, jnp.sign(q_grad))
         
-        # m_cur = jnp.minimum(m_cur, 1)
-        # s_cur = jnp.minimum(s_cur, 1)
-        # q_cur = jnp.minimum(q_cur, 1)
+        m_cur = (1 - tau_step) * m_cur + tau_step * m_grad
+        s_cur = (1 - tau_step) * s_cur + tau_step * s_grad
+        q_cur = (1 - tau_step) * q_cur + tau_step * q_grad
         
-        # m_cur = jnp.maximum(m_cur, -1)
-        # s_cur = jnp.maximum(s_cur, -1)
-        # q_cur = jnp.maximum(q_cur, -1)
         
         t_cur = t_cur + 1
         
         return t_cur, m_cur, s_cur, q_cur, m_prev, s_prev, q_prev, m_hat, s_hat, q_hat, key_update
     
     @partial(jax.jit, static_argnums = (0, 1))
-    def iterate(self, t, t_step, beta_s, beta, alpha, m_init, s_init, q_init):
+    def iterate(self, t, t_step, tau_step, beta_s, beta, alpha, m_init, s_init, q_init):
         '''
         Run update multiple times to solve the saddle-point equations.
 
@@ -508,28 +547,24 @@ class Iterator():
         # Symmetrize q before the first iteration as explained in the text.
         q_init = (q_init + q_init.T)/2
         
-        # start = time.time()
+        t_cur, m_cur, s_cur, q_cur, m_prev, s_prev, q_prev, m_hat, s_hat, q_hat, key_update = self.update(t_step, tau_step, beta_s, beta, alpha, p_M_s, (0, m_init, s_init, q_init, m_init, s_init, q_init, m_init, s_init, q_init, self.key_update))
         
-        # jax.debug.print("End.")
+        t_cur, m_final, s_final, q_final, m_prev, s_prev, q_prev, m_hat, s_hat, q_hat, key_update = jax.lax.while_loop(partial(keep_looping, t, self.tol), partial(self.update, t_step, tau_step, beta_s, beta, alpha, p_M_s), (t_cur, m_cur, s_cur, q_cur, m_prev, s_prev, q_prev, m_hat, s_hat, q_hat, key_update))
         
-        t_cur, m_cur, s_cur, q_cur, m_prev, s_prev, q_prev, m_hat, s_hat, q_hat, key_update = self.update(1, beta_s, beta, alpha, p_M_s,
-                                                                                                          (0, m_init, s_init, q_init, m_init, s_init, q_init,
-                                                                                                           m_init, s_init, q_init, self.key_update))
+        # jax.debug.print("{t_cur}", t_cur = t_cur)
         
-        t_cur, m_final, s_final, q_final, m_prev, s_prev, q_prev, m_hat, s_hat, q_hat, key_update = jax.lax.while_loop(partial(keep_looping, t, self.tol),
-                                                                                                                 partial(self.update, t_step,
-                                                                                                                         beta_s, beta, alpha, p_M_s),
-                                                                                                                 (t_cur, m_cur, s_cur, q_cur, m_prev,
-                                                                                                                  s_prev, q_prev, m_hat, s_hat, q_hat, key_update))
-
         key_update, key_ordinary, key_conjugate = jax.random.split(key_update, num = 3)
         
         H_L = self.hamiltonian_L(m_hat, s_hat, q_hat, 1, 1, key_conjugate)
-        p_L = jnp.real(probability(H_L))
+        p_L = probability(H_L)
         
-        m_res = m_final - jnp.squeeze(jnp.sum(self.p_x * jnp.mean(self.spins_s * jnp.sum(p_L * self.spins_T, axis = 0), axis = 1, keepdims = True), axis = 0))
-        s_res = s_final - jnp.squeeze(jnp.sum(self.p_x * jnp.mean(jnp.sum(p_L * self.spins_T * self.spins, axis = 0), axis = 1, keepdims = True), axis = 0))
-        q_res = q_final - jnp.squeeze(jnp.sum(self.p_x * jnp.mean(jnp.sum(p_L * self.spins_T, axis = 0) * jnp.sum(p_L * self.spins, axis = 0), axis = 1, keepdims = True), axis = 0))
+        # m_res = m_final - jnp.real(jnp.squeeze(jnp.sum(self.p_x * jnp.mean(self.spins_s * jnp.sum(p_L * self.spins_T, axis = 0), axis = 1, keepdims = True), axis = 0)))
+        # s_res = s_final - jnp.real(jnp.squeeze(jnp.sum(self.p_x * jnp.mean(jnp.sum(p_L * self.spins_T * self.spins, axis = 0), axis = 1, keepdims = True), axis = 0)))
+        # q_res = q_final - jnp.real(jnp.squeeze(jnp.sum(self.p_x * jnp.mean(jnp.sum(p_L * self.spins_T, axis = 0) * jnp.sum(p_L * self.spins, axis = 0), axis = 1, keepdims = True), axis = 0)))
+        
+        m_res = m_final - jnp.squeeze(jnp.sum(self.p_x * real_mean(self.spins_s * jnp.sum(p_L * self.spins_T, axis = 0)), axis = 0))
+        s_res = s_final - jnp.squeeze(jnp.sum(self.p_x * real_mean(jnp.sum(p_L * self.spins_T * self.spins, axis = 0)), axis = 0))
+        q_res = q_final - jnp.squeeze(jnp.sum(self.p_x * real_mean(jnp.sum(p_L * self.spins_T, axis = 0) * jnp.sum(p_L * self.spins, axis = 0)), axis = 0))
 
         jax.debug.print("Max residuals of m, s and q, respectively:")
         jax.debug.print("{m_res_max}", m_res_max = max_abs(m_res))
@@ -537,27 +572,23 @@ class Iterator():
         jax.debug.print("{q_res_max}", q_res_max = max_abs(q_res))
         
         H_L = self.hamiltonian_L(m_prev, s_prev, q_prev, beta_s, beta, key_ordinary)
-        p_L = jnp.real(probability(H_L))
+        p_L = probability(H_L) # jnp.real(probability(H_L))
         
         H_M = hamiltonian_M(self.spins_T, self.spins, s_prev, beta)
         p_M = probability(H_M)
         
-        m_res = m_hat - beta_s*beta*alpha * jnp.squeeze(jnp.sum(p_M_s * jnp.mean(self.spins_s * jnp.sum(p_L * self.spins_T, axis = 0), axis = 1, keepdims = True), axis = 0))
-        s_res = s_hat - beta**2*alpha * jnp.squeeze(jnp.sum(p_M_s * jnp.mean(jnp.sum(p_L * self.spins_T * self.spins, axis = 0), axis = 1, keepdims = True), axis = 0) - jnp.sum(p_M * self.spins_T * self.spins, axis = 0))
-        q_res = q_hat - beta**2*alpha * jnp.squeeze(jnp.sum(p_M_s * jnp.mean(jnp.sum(p_L * self.spins_T, axis = 0) * jnp.sum(p_L * self.spins, axis = 0), axis = 1, keepdims = True), axis = 0))
-
+        # m_res = m_hat - beta_s*beta*alpha * jnp.real(jnp.squeeze(jnp.sum(p_M_s * jnp.mean(self.spins_s * jnp.sum(p_L * self.spins_T, axis = 0), axis = 1, keepdims = True), axis = 0)))
+        # s_res = s_hat - beta**2*alpha * jnp.real(jnp.squeeze(jnp.sum(p_M_s * jnp.mean(jnp.sum(p_L * self.spins_T * self.spins, axis = 0), axis = 1, keepdims = True), axis = 0) - jnp.sum(p_M * self.spins_T * self.spins, axis = 0)))
+        # q_res = q_hat - beta**2*alpha * jnp.real(jnp.squeeze(jnp.sum(p_M_s * jnp.mean(jnp.sum(p_L * self.spins_T, axis = 0) * jnp.sum(p_L * self.spins, axis = 0), axis = 1, keepdims = True), axis = 0)))
+        
+        m_res = m_hat - beta_s*beta*alpha * jnp.squeeze(jnp.sum(p_M_s * real_mean(self.spins_s * jnp.sum(p_L * self.spins_T, axis = 0)), axis = 0))
+        s_res = s_hat - beta**2*alpha * jnp.squeeze(jnp.sum(p_M_s * real_mean(jnp.sum(p_L * self.spins_T * self.spins, axis = 0)), axis = 0) - jnp.sum(p_M * self.spins_T * self.spins, axis = 0))
+        q_res = q_hat - beta**2*alpha * jnp.squeeze(jnp.sum(p_M_s * real_mean(jnp.sum(p_L * self.spins_T, axis = 0) * jnp.sum(p_L * self.spins, axis = 0)), axis = 0))
+        
         jax.debug.print("Max residuals of m_hat, s_hat and q_hat, respectively:")
         jax.debug.print("{m_res_max}", m_res_max = max_abs(m_res))
         jax.debug.print("{s_res_max}", s_res_max = max_abs(s_res))
         jax.debug.print("{q_res_max}", q_res_max = max_abs(q_res))
-        
-        # jax.debug.print("Begin:")
-        
-        # jax.debug.print("{q_cur}", q_cur = q_cur)
-        
-        # end = time.time()
-        # print("Timing:")
-        # print(end - start)
         
         F = self.free_entropy(m_final, s_final, q_final, m_hat, s_hat, q_hat, beta_s, beta, alpha, p_M_s, key_update)
         
@@ -660,7 +691,11 @@ class NormalIterator():
         
         # z = self.z
         
-        A_q_times_z = jnp.sqrt(2*q - jnp.diag(jnp.sum(q, axis = 1) + 0j)) * z
+        A_q_squared = 2*q - jnp.diag(jnp.sum(q, axis = 1))
+        A_q = jnp.sqrt(jnp.abs(A_q_squared))
+        A_q = jnp.where(A_q_squared >= 0, (1 + 0j) * A_q, (0 + 1j) * A_q)
+        
+        A_q_times_z = A_q * z
         
         H_L = lambda_2 * (jnp.sum(self.spins_T @ A_q_times_z, axis = -1, keepdims = True) + jnp.sum(A_q_times_z @ self.spins, axis = -2, keepdims = True))/2
         
@@ -673,7 +708,7 @@ class NormalIterator():
         return H_L
     
     @partial(jax.jit, static_argnums = 0)
-    def update(self, t_step, beta_s, beta, alpha, p_M_s, args):
+    def update(self, t_step, tau_step, beta_s, beta, alpha, p_M_s, args):
         '''
         Single iteration of the saddle-point equations.
         Update the conjugate order parameters first, then update the ordinary order parameters.
@@ -707,38 +742,37 @@ class NormalIterator():
         H_L = self.hamiltonian_L(m_cur, s_cur, q_cur, beta_s, beta, key_ordinary)
         p_L = jnp.real(probability(H_L))
         
-        # jax.debug.print("{p_L}", p_L = jnp.max(jnp.sum(jnp.abs(p_L), axis = 0)))
-        
         H_M = hamiltonian_M(self.spins_T, self.spins, s_cur, beta)
         p_M = probability(H_M)
         
-        m_hat = (1 - t_step) * m_hat + t_step * beta_s*beta*alpha * jnp.squeeze(jnp.sum(p_M_s * jnp.mean(self.spins_s * jnp.sum(p_L * self.spins_T, axis = 0), axis = 1, keepdims = True), axis = 0))
-        q_hat = (1 - t_step) * q_hat + t_step * beta**2*alpha * jnp.squeeze(jnp.sum(p_M_s * jnp.mean(jnp.sum(p_L * self.spins_T, axis = 0) * jnp.sum(p_L * self.spins, axis = 0), axis = 1, keepdims = True), axis = 0))
-        s_hat = (1 - t_step) * s_hat + t_step * beta**2*alpha * jnp.squeeze(jnp.sum(p_M_s * jnp.mean(jnp.sum(p_L * self.spins_T * self.spins, axis = 0), axis = 1, keepdims = True), axis = 0) - jnp.sum(p_M * self.spins_T * self.spins, axis = 0))
+        m_grad = beta_s*beta*alpha * jnp.squeeze(jnp.sum(p_M_s * real_mean(self.spins_s * jnp.sum(p_L * self.spins_T, axis = 0)), axis = 0))
+        q_grad = beta**2*alpha * jnp.squeeze(jnp.sum(p_M_s * real_mean(jnp.sum(p_L * self.spins_T, axis = 0) * jnp.sum(p_L * self.spins, axis = 0)), axis = 0))
+        s_grad = beta**2*alpha * jnp.squeeze(jnp.sum(p_M_s * real_mean(jnp.sum(p_L * self.spins_T * self.spins, axis = 0)), axis = 0) - jnp.sum(p_M * self.spins_T * self.spins, axis = 0))
         
-        # H_L = self.hamiltonian_L(m_hat, s_hat, q_hat, 1, 1, key_conjugate)
-        # p_L = jnp.real(probability(H_L))
+        m_hat = (1 - t_step) * m_hat + t_step * m_grad
+        q_hat = (1 - t_step) * q_hat + t_step * q_grad
+        s_hat = (1 - t_step) * s_hat + t_step * s_grad
         
-        # jax.debug.print("{p_L}", p_L = jnp.max(jnp.sum(jnp.abs(p_L), axis = 0)))
         
         student_mat_cor = jnp.linalg.inv(jnp.eye(self.P_t) + q_hat - s_hat)
         
         m_id = m_hat @ student_mat_cor
         
-        m_ext = self.teacher_mat_cor @ m_id
-        q_ext = m_id.T @ m_ext + student_mat_cor @ q_hat @ student_mat_cor
-        s_ext = q_ext + student_mat_cor
+        m_grad = self.teacher_mat_cor @ m_id
+        q_grad = m_id.T @ m_grad + student_mat_cor @ q_hat @ student_mat_cor
+        s_grad = q_grad + student_mat_cor
         
-        m_cur = 1/(1 + t_step) * m_cur + t_step/(1 + t_step) * m_ext
-        q_cur = 1/(1 + t_step) * q_cur + t_step/(1 + t_step) * q_ext
-        s_cur = 1/(1 + t_step) * s_cur + t_step/(1 + t_step) * s_ext
+        m_cur = (1 - tau_step) * m_cur + tau_step * m_grad
+        q_cur = (1 - tau_step) * q_cur + tau_step * q_grad
+        s_cur = (1 - tau_step) * s_cur + tau_step * s_grad
+        
         
         t_cur = t_cur + 1
         
         return t_cur, m_cur, s_cur, q_cur, m_prev, s_prev, q_prev, m_hat, s_hat, q_hat, key_update
     
     @partial(jax.jit, static_argnums = (0, 1))
-    def iterate(self, t, t_step, beta_s, beta, alpha, m_init, s_init, q_init):
+    def iterate(self, t, t_step, tau_step, beta_s, beta, alpha, m_init, s_init, q_init):
         '''
         Run update multiple times to solve the saddle-point equations.
 
@@ -782,15 +816,9 @@ class NormalIterator():
         
         # jax.debug.print("End.")
         
-        t_cur, m_cur, s_cur, q_cur, m_prev, s_prev, q_prev, m_hat, s_hat, q_hat, key_update = self.update(1, beta_s, beta, alpha, p_M_s,
-                                                                                                          (0, m_init, s_init, q_init, m_init, s_init, q_init,
-                                                                                                           m_init, s_init, q_init, self.key_update))
+        t_cur, m_cur, s_cur, q_cur, m_prev, s_prev, q_prev, m_hat, s_hat, q_hat, key_update = self.update(t_step, tau_step, beta_s, beta, alpha, p_M_s, (0, m_init, s_init, q_init, m_init, s_init, q_init, m_init, s_init, q_init, self.key_update))
         
-        t_cur, m_final, s_final, q_final, m_prev, s_prev, q_prev, m_hat, s_hat, q_hat, key_update = jax.lax.while_loop(partial(keep_looping, t, self.tol),
-                                                                                                                 partial(self.update, t_step,
-                                                                                                                         beta_s, beta, alpha, p_M_s),
-                                                                                                                 (t_cur, m_cur, s_cur, q_cur, m_prev,
-                                                                                                                  s_prev, q_prev, m_hat, s_hat, q_hat, key_update))
+        t_cur, m_final, s_final, q_final, m_prev, s_prev, q_prev, m_hat, s_hat, q_hat, key_update = jax.lax.while_loop(partial(keep_looping, t, self.tol), partial(self.update, t_step, tau_step, beta_s, beta, alpha, p_M_s), (t_cur, m_cur, s_cur, q_cur, m_prev, s_prev, q_prev, m_hat, s_hat, q_hat, key_update))
         
         # jax.debug.print("Begin:")
         
@@ -986,7 +1014,7 @@ def mat_cor_eigval(spins_s_T, spins_s, mat_cor_cor, beta_s_range, P, n_beta, n_c
     mat_cor from the projected Wishart distribution defined in the paper.
 
     Then, calculate the max eigenvalue of the matrix S defined in the paper as a function
-    of beta and the off-diagonal of mat_cor_cor.
+    of beta_s and the off-diagonal of mat_cor_cor.
 
     Inputs
     ------

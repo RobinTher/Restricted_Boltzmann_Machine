@@ -1,7 +1,7 @@
 import numpy as np
 import jax.numpy as jnp
 import jax
-from Saddle_point_iteration import Iterator, mat_equi_cor
+from Saddle_point_iteration import Iterator, mat_equi_cor, hamiltonian_M, probability
 
 import matplotlib.pyplot as plt
 import cmasher as cmr
@@ -12,23 +12,7 @@ tol = np.finfo("float32").eps
 plt.rcParams["font.family"] = "serif"
 plt.rcParams["mathtext.fontset"] = "dejavuserif"
 
-'''
-beta_s = 1/1.25
-P = 2
-P_t = 2
-c = 0.7
-
-t = 100
-t_step = 1/2
-seed = 4
-
-n_beta = 20
-n_alpha = 20
-T_range = np.linspace(0.53, 1.1, num = n_beta, endpoint = True)
-alpha_range = np.linspace(0.045, 0.9, num = n_alpha, endpoint = True)
-'''
-
-def phase_diagram_fixed_T_s(beta_s, T_range, alpha_range, c, P, t, t_step, seed):
+def phase_diagram_fixed_T_s(beta_s, T_range, alpha_range, c, P, t, t_step, tau_step, seed):
     '''
     Solve the saddle-point equations over a range of beta and alpha
     with fixed T_s and P_t = P in order to reproduce Figs. (8) and (9).
@@ -37,13 +21,12 @@ def phase_diagram_fixed_T_s(beta_s, T_range, alpha_range, c, P, t, t_step, seed)
     n_beta = len(T_range)
     n_alpha = len(alpha_range)
 
-    n_normal_samples = 8000000
-    n_binary_samples = 80000000
+    n_normal_samples = 8 # 000000
+    n_binary_samples = 8 # 0000000
 
     P_t = P
 
     key = jax.random.PRNGKey(seed)
-    key = jax.random.split(key)
     
     m_init = jnp.eye(P, P_t)
     s_init = jnp.eye(P_t)
@@ -60,7 +43,7 @@ def phase_diagram_fixed_T_s(beta_s, T_range, alpha_range, c, P, t, t_step, seed)
         for j, alpha in enumerate(alpha_range):
             beta = 1/T
             
-            m, s, q, p_M_s, _ = iterator.iterate(t, t_step, beta_s, beta, alpha, m_init, s_init, q_init)
+            m, s, q, p_M_s, _ = iterator.iterate(t, t_step, tau_step, beta_s, beta, alpha, m_init, s_init, q_init)
             
             m_range[i, j] = np.mean(np.diagonal(m))
             q_range[i, j] = np.mean(np.diagonal(q))
@@ -68,6 +51,15 @@ def phase_diagram_fixed_T_s(beta_s, T_range, alpha_range, c, P, t, t_step, seed)
     with open("./Data/binary_phase_diagram_T_s=%.2f_P=%d_c=%.2f.npy" % (1/beta_s, P, c), "wb") as file:
         np.save(file, m_range)
         np.save(file, q_range)
+    
+    H_M_s = hamiltonian_M(iterator.spins_s_T, iterator.spins_s, iterator.mat_cor, beta_s)
+    p_M_s = probability(H_M_s)
+    
+    d = np.squeeze(np.sum(p_M_s * iterator.spins_s_T * iterator.spins_s, axis = 0))[0, 1]
+    eigval = (P - 1)**2 * c*d + (P - 1) * (c + d) + 1
+    
+    with open("./Data/eigval_T_s=%.2f_P=%d_c=%.2f.npy" % (1/beta_s, P, c), "wb") as file:
+        np.save(file, eigval)
 
 def plot_phase_diagram_fixed_T_s(T_s, T_range, alpha_range, c_range, P_range, name, plot_m = False):
     '''
@@ -81,11 +73,15 @@ def plot_phase_diagram_fixed_T_s(T_s, T_range, alpha_range, c_range, P_range, na
 
     for i, P in enumerate(P_range):
         for c, axis in zip(c_range, axes[i]):
-            file_name = "./Data/%s_phase_diagram_P=%d_c=%.2f.npy" % (name, P, c)
-            file_name = re.sub("__", "_", file_name, count = 1)
-            with open(file_name, "rb") as file:
-                _ = np.load(file)
-                eigval_range = np.load(file)
+            if plot_m:
+                with open("./Data/eigval_T_s=%.2f_P=%d_c=%.2f.npy" % (T_s, P, c), "rb") as file:
+                    eigval = np.load(file)
+            else:
+                file_name = "./Data/%s_phase_diagram_P=%d_c=%.2f.npy" % (name, P, c)
+                file_name = re.sub("__", "_", file_name, count = 1)
+                with open(file_name, "rb") as file:
+                    _ = np.load(file)
+                    eigval_range = np.load(file)
             
             file_name = "./Data/%s_phase_diagram_T_s=%.2f_P=%d_c=%.2f.npy" % (name, T_s, P, c)
             file_name = re.sub("__", "_", file_name, count = 1)
@@ -98,12 +94,13 @@ def plot_phase_diagram_fixed_T_s(T_s, T_range, alpha_range, c_range, P_range, na
                                     extent = (np.min(alpha_range), np.max(alpha_range),
                                               np.min(T_range), np.max(T_range)),
                                     vmin = 0, vmax = 0.75)
+                axis.plot(T_s**2*T_range**2/eigval, T_range, color = "white")
             else:
                 image = axis.imshow(q_range, aspect = 2*0.5357142857142857, origin = "lower", cmap = cmr.fall,
                                     extent = (np.min(alpha_range), np.max(alpha_range),
                                               np.min(T_range), np.max(T_range)),
                                     vmin = 0, vmax = 0.75)
-            axis.plot(T_range**4/eigval_range, T_range, color = "white")
+                axis.plot(T_range**4/eigval_range, T_range, color = "white")
             axis.set_xlim(np.min(alpha_range), np.max(alpha_range))
             axis.tick_params(axis = "both", which = "minor", labelsize = fontsize)
             axis.tick_params(axis = "both", which = "major", labelsize = fontsize)

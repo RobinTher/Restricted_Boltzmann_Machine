@@ -153,7 +153,7 @@ class RBM(torch.nn.Module):
     langevin_training:
         Train the RBM using underdamped stochastic Langevin dynamics.
         Run the ord_update method for a number of training epochs.
-    Metropolis_training:
+    metropolis_training:
         Train the RBM using the Metropolis algorithm.
         Accept/reject weight spin flips based on the difference in log-likelihood between states.
     '''
@@ -642,6 +642,7 @@ class RBM(torch.nn.Module):
             
             if number_magnetization_samples != 0:
                 record_magnetization_this_epoch = training_epoch % ((number_training_epochs - number_burn_in_epochs) // number_magnetization_samples) == 0
+                record_magnetization_this_epoch = record_magnetization_this_epoch & (training_epoch > number_burn_in_epochs)
             else:
                 record_magnetization_this_epoch = False
             
@@ -730,6 +731,7 @@ class RBM(torch.nn.Module):
             
             if number_magnetization_samples != 0:
                 record_magnetization_this_epoch = training_epoch % ((number_training_epochs - number_burn_in_epochs) // number_magnetization_samples) == 0
+                record_magnetization_this_epoch = record_magnetization_this_epoch & (training_epoch > number_burn_in_epochs)
             else:
                 record_magnetization_this_epoch = False
             
@@ -762,7 +764,10 @@ class RBM(torch.nn.Module):
             
             if record_magnetization_this_epoch:
                 m = torch.transpose(self.teacher.xi, 0, 1) @ self.xi / self.N
-                m_list.append(torch.abs(m).detach().tolist())
+                # m_list.append(torch.abs(m).detach().tolist())
+                
+                m_sign = 2 * (torch.max(m) > -torch.min(m)) - 1
+                m_list.append((m_sign * m).detach().tolist())
             
             if monitor_training_this_epoch:
                 if self.teacher is not None:

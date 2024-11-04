@@ -10,36 +10,6 @@ plt.rcParams["mathtext.fontset"] = "dejavuserif"
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-'''
-beta = 1.2
-# beta = 2.8
-
-n_alpha = 20
-alpha_range = np.linspace(0.1, 2, num = n_alpha, endpoint = True)
-# alpha_range = np.linspace(0.1, 1, num = n_alpha, endpoint = True)
-
-N = 512
-P = 1
-P_t = 2
-m_0 = 0.2
-
-# It is very fast to sample from the teacher
-number_teacher_sampling_steps = 100
-number_monitored_sampling_steps = 10
-
-number_student_training_epochs = 36*12000
-number_monitored_training_epochs = 20
-number_burn_in_epochs = 108000
-number_magnetization_samples = 1000
-
-random_number_seed = 37
-
-random_batch_seed = 87
-
-field_magnitude = 0.04
-# field_magnitude = 0.
-'''
-
 def simulation_run_mismatched_P(beta, alpha_range, N, P, P_t, m_0, number_teacher_sampling_steps,
                                 number_monitored_sampling_steps, number_student_training_epochs,
                                 number_monitored_training_epochs, number_burn_in_epochs,
@@ -127,38 +97,6 @@ def simulation_run_mismatched_P(beta, alpha_range, N, P, P_t, m_0, number_teache
     del student_B
 
     gc.collect()
-
-'''
-beta = 4
-
-n_alpha = 20
-alpha_range = np.linspace(0.1, 1, num = n_alpha, endpoint = True)
-
-N = 512
-P = 1
-P_t = 2
-m_0 = 0.2
-
-# It is very fast to sample from the teacher
-number_teacher_sampling_steps = 100
-number_monitored_sampling_steps = 0
-
-number_student_sampling_steps = 1
-initial_learning_rate_A = 0.01
-initial_learning_rate_B = 0.012
-learning_rate_decay_A = 0.00005
-learning_rate_decay_B = 0.005
-momentum = 0.8
-number_student_training_epochs = 8*7200
-number_monitored_training_epochs = 5
-
-number_burn_in_epochs = 6*7200
-number_magnetization_samples = 100
-
-random_number_seed = 2
-
-random_batch_seed = 87
-'''
 
 def simulation_run_normal_mismatched_P(beta, alpha_range, N, P, P_t, m_0, number_teacher_sampling_steps,
                                        number_monitored_sampling_steps, number_student_sampling_steps,

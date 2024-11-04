@@ -9,31 +9,6 @@ plt.rcParams["font.family"] = "serif"
 plt.rcParams["mathtext.fontset"] = "dejavuserif"
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-'''
-beta = 1.2
-
-n_alpha = 20
-alpha_range = np.linspace(0.1, 2, num = n_alpha, endpoint = True) # np.array([1.])
-
-N = 512
-P = 2
-m_0 = 0.2
-
-# It is very fast to sample from the teacher
-number_teacher_sampling_steps = 1000
-number_monitored_sampling_steps = 0
-
-number_student_training_epochs = 36*12000
-number_monitored_training_epochs = 5
-number_burn_in_epochs = 108000
-number_magnetization_samples = 500
-
-random_number_seed = 2
-
-random_batch_seed = 87
-
-field_magnitude = 0.04
-'''
 
 def simulation_run(beta, alpha_range, N, P, m_0, number_teacher_sampling_steps,
                     number_monitored_sampling_steps, number_student_training_epochs,
@@ -79,7 +54,7 @@ def simulation_run(beta, alpha_range, N, P, m_0, number_teacher_sampling_steps,
         
         teacher.gibbs_sample_visible(sigma, beta_eff, number_teacher_sampling_steps, number_monitored_sampling_steps)
         
-        m_list = student.metropolis_training(sigma, field, beta_eff, number_student_training_epochs, N_batch_size, number_monitored_training_epochs,
+        m_list = student.metropolis_training(sigma, field/M, beta_eff, number_student_training_epochs, N_batch_size, number_monitored_training_epochs,
                                             number_burn_in_epochs, number_magnetization_samples, anneal = False)
         
         m_range = np.abs(np.array(m_list))
@@ -114,7 +89,7 @@ def plot_simulated_overlap(beta, alpha_range, P, c = None):
         with open("./Data/PSB_magnetization_P=%d_beta=%.2f.npy" % (P, beta), "rb") as file:
             m_range = np.load(file)
         
-        with open("./Data/simulated_PSB_magnetization_P=%d_beta=%.2f.npy" % (P, beta), "rb") as file:
+        with open("./Data/simulated_magnetization_P=%d_beta=%.2f.npy" % (P, beta), "rb") as file:
             m_mean_range = np.load(file)
             m_std_range = np.load(file)
     else:

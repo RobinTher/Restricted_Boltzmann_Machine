@@ -12,22 +12,7 @@ tol = np.finfo("float32").eps
 plt.rcParams["font.family"] = "serif"
 plt.rcParams["mathtext.fontset"] = "dejavuserif"
 
-'''
-P = 2
-P_t = 2
-c = 0.7
-
-t = 100
-t_step = 1/2
-seed = 4
-
-n_beta = 20
-n_alpha = 20
-T_range = np.linspace(1.025, 1.5, num = n_beta, endpoint = True)
-alpha_range = np.linspace(0.67, 2, num = n_alpha, endpoint = True)
-'''
-
-def phase_diagram(T_range, alpha_range, c, P, t, t_step, seed):
+def phase_diagram(T_range, alpha_range, c, P, t, t_step, tau_step, seed):
     '''
     Solve the saddle-point equations over a predefined range of beta and alpha
     with beta_s = beta and P_t = P in order to reproduce Figs. (7), (12), (17) and (18).
@@ -60,7 +45,7 @@ def phase_diagram(T_range, alpha_range, c, P, t, t_step, seed):
             beta_s = 1/T
             beta = 1/T
 
-            m, s, q, p_M_s, _ = iterator.iterate(t, t_step, beta_s, beta, alpha, m_init, s_init, q_init)
+            m, s, q, p_M_s, _ = iterator.iterate(t, t_step, tau_step, beta_s, beta, alpha, m_init, s_init, q_init)
 
             m_range[i, j] = np.mean(np.diagonal(m))
 
@@ -85,7 +70,7 @@ def phase_diagram(T_range, alpha_range, c, P, t, t_step, seed):
             beta_s = 1/T
             beta = 1/T
 
-            m, s, q, p_M_s, _ = iterator.iterate(t, t_step, beta_s, beta, alpha, m_init, s_init, q_init)
+            m, s, q, p_M_s, _ = iterator.iterate(t, t_step, tau_step, beta_s, beta, alpha, m_init, s_init, q_init)
 
             m_range[i, j] = np.mean(np.diagonal(m))
 
@@ -107,7 +92,7 @@ def phase_diagram(T_range, alpha_range, c, P, t, t_step, seed):
             beta_s = 1/T
             beta = 1/T
 
-            m, s, q, p_M_s = iterator.iterate(t, t_step, beta_s, beta, alpha, m_init, s_init, q_init)
+            m, s, q, p_M_s = iterator.iterate(t, t_step, tau_step, beta_s, beta, alpha, m_init, s_init, q_init)
         
             m_range[i, j] = np.mean(np.diagonal(m))
         
@@ -129,7 +114,7 @@ def phase_diagram(T_range, alpha_range, c, P, t, t_step, seed):
             beta_s = 1/T
             beta = 1/T
             
-            m, s, q, p_M_s = iterator.iterate(t, t_step, beta_s, beta, alpha, m_init, s_init, q_init)
+            m, s, q, p_M_s = iterator.iterate(t, t_step, tau_step, beta_s, beta, alpha, m_init, s_init, q_init)
             
             m_range[i, j] = np.mean(np.diagonal(m))
         

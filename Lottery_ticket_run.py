@@ -10,37 +10,6 @@ plt.rcParams["mathtext.fontset"] = "dejavuserif"
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-'''
-beta = 2.8
-
-n_alpha = 20
-alpha_range = np.linspace(0.1, 1, num = n_alpha, endpoint = True)
-
-N = 512
-P = 4
-P_t = 8
-c = 0.05
-
-# It is very fast to sample from the teacher
-number_teacher_sampling_steps = 100
-number_monitored_sampling_steps = 0
-
-number_student_sampling_steps = 1
-initial_learning_rate = 0.01
-learning_rate_decay = 0.00005
-momentum = 0.8
-number_student_training_epochs = 8*8000
-number_student_0_training_epochs = 2000
-number_monitored_training_epochs = 5
-
-number_burn_in_epochs = 8*8000-500
-number_magnetization_samples = 100
-
-random_number_seed = 2
-
-random_batch_seed = 87
-'''
-
 def simulation_run_winning_ticket_magnetization(beta, alpha_range, c, N, P, P_t, number_teacher_sampling_steps,
                                        number_monitored_sampling_steps, number_student_sampling_steps,
                                        initial_learning_rate, learning_rate_decay, momentum,
@@ -162,27 +131,6 @@ def simulation_run_winning_ticket_magnetization(beta, alpha_range, c, N, P, P_t,
     del student_B
 
     gc.collect()
-
-'''
-# It is very fast to sample from the teacher
-number_teacher_sampling_steps = 100
-number_monitored_sampling_steps = 0
-
-number_student_sampling_steps = 1
-initial_learning_rate = 0.01
-learning_rate_decay = 0.00005
-momentum = 0.8
-number_student_training_epochs = 2000
-number_student_0_training_epochs = 2000
-number_monitored_training_epochs = 5
-
-number_burn_in_epochs = 0
-number_magnetization_samples = 500
-
-random_number_seed = 2
-
-random_batch_seed = 87
-'''
 
 def simulation_run_winning_ticket_lead(beta, alpha_range, c, N, P, P_t, number_teacher_sampling_steps,
                                        number_monitored_sampling_steps, number_student_sampling_steps,
@@ -316,7 +264,7 @@ def plot_winning_ticket_lead(beta, alpha_range, P_sim, P_saddle, number_student_
     fontsize = 19
     
     if c is None:
-        with open("./Data/PSB_normal_magnetization_P=%d_beta=%.2f.npy" % (P_saddle, beta), "rb") as file:
+        with open("./Data/partial_PSB_normal_magnetization_P=%d_beta=%.2f.npy" % (P_saddle, beta), "rb") as file:
             m_range = np.load(file)
         
         with open("./Data/simulated_normal_magnetization_magnitude_pruning_P=%d_beta=%.2f.npy" % (P_sim, beta), "rb") as file:
@@ -329,7 +277,7 @@ def plot_winning_ticket_lead(beta, alpha_range, P_sim, P_saddle, number_student_
             m_d_med_range = np.load(file)
             m_d_mad_range = np.load(file)
     else:
-        with open("./Data/normal_magnetization_c=%.2f_P=%d_beta=%.2f.npy" % (c, P_saddle, beta), "rb") as file:
+        with open("./Data/normal_magnetization_c=%.2f_P=%d_P_t=%d_beta=%.2f.npy" % (c, P_saddle, P_saddle, beta), "rb") as file:
             m_range = np.load(file)
         
         with open("./Data/simulated_normal_magnetization_magnitude_pruning_c=%.2f_P=%d_beta=%.2f.npy" % (c, P_sim, beta), "rb") as file:
